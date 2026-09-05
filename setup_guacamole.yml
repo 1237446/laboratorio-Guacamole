@@ -1,5 +1,5 @@
 ---
-- name: Preparar Servidor AWS para Guacamole y NPM (Dia 0)
+- name: Preparar Servidor para Guacamole y NPM (Dia 0)
   hosts: servidor_guacamole
   become: yes
   gather_facts: yes
