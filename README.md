@@ -118,7 +118,6 @@ El repositorio está organizado en carpetas de producción y playbooks de automa
 
 ```text
 ├── README.md                      # Esta documentación
-├── laboratorio-ansible.pem        # Llave SSH principal de AWS (Necesaria en la raíz)
 ├── inventory.yml                  # Inventario Ansible para el Servidor Incus y Guacamole
 ├── setup_incus_lab.yml            # Playbook Ansible: Instala y configura Incus, Zabbly y red
 ├── setup_guacamole.yml            # Playbook Ansible: Instala Docker y sube guacamole_production
