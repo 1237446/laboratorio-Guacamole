@@ -1,0 +1,131 @@
+---
+- name: Preparar Servidor AWS como Host de Incus (Dia 0)
+  hosts: servidor_incus
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # ==========================================
+    # 1. CONFIGURACIÓN DE FECHA Y HORA
+    # ==========================================
+    - name: Configurar la zona horaria a America/Lima
+      timezone:
+        name: America/Lima
+
+    - name: Asegurar que el servicio de sincronización de tiempo (NTP) esté activo
+      service:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+
+    # ==========================================
+    # 2. ACTUALIZACIÓN DEL SISTEMA
+    # ==========================================
+    - name: Actualizar repositorios y paquetes del sistema (apt update & upgrade)
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+
+    # ==========================================
+    # 3. OPTIMIZACIÓN DEL SISTEMA HOST
+    # ==========================================
+    - name: Aumentar los limites del kernel para soportar muchos contenedores (inotify/max_user_instances)
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { key: 'fs.inotify.max_queued_events', value: '1048576' }
+        - { key: 'fs.inotify.max_user_instances', value: '1048576' }
+        - { key: 'fs.inotify.max_user_watches', value: '1048576' }
+        - { key: 'vm.max_map_count', value: '262144' }
+        - { key: 'net.ipv4.ip_forward', value: '1' }
+
+    # ==========================================
+    # 4. INSTALACIÓN DE INCUS (REPOSITORIO ZABBLY)
+    # ==========================================
+    - name: Descargar la llave GPG del repositorio Zabbly de Incus
+      get_url:
+        url: https://pkgs.zabbly.com/key.asc
+        dest: /etc/apt/keyrings/zabbly.asc
+        mode: '0644'
+
+    - name: Agregar el repositorio APT de Zabbly
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/zabbly.asc] https://pkgs.zabbly.com/incus/stable {{ ansible_distribution_release }} main"
+        state: present
+        filename: zabbly-incus-stable
+
+    - name: Instalar Incus
+      apt:
+        name: incus
+        state: present
+        update_cache: yes
+
+    - name: Asegurar que el usuario actual pertenezca al grupo incus-admin
+      user:
+        name: ubuntu
+        groups: incus-admin
+        append: yes
+
+    # ==========================================
+    # 5. INICIALIZACIÓN DE INCUS (PRESEED)
+    # ==========================================
+    - name: Verificar si Incus ya está inicializado
+      command: incus network show incusbr0
+      register: incus_init_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Inicializar Incus con configuración base (Almacenamiento en dir y Red NAT)
+      shell: |
+        cat <<EOF | incus admin init --preseed
+        config:
+          core.https_address: 0.0.0.0:8443
+        networks:
+        - config:
+            ipv4.address: auto
+            ipv6.address: none
+          description: ""
+          name: incusbr0
+          type: bridge
+        storage_pools:
+        - config:
+            source: /var/lib/incus/storage-pools/default
+          description: ""
+          name: default
+          driver: dir
+        profiles:
+        - config: {}
+          description: ""
+          devices:
+            eth0:
+              name: eth0
+              network: incusbr0
+              type: nic
+            root:
+              path: /
+              pool: default
+              type: disk
+          name: default
+        EOF
+      when: incus_init_check.rc != 0
+
+    # ==========================================
+    # 6. CONFIGURACIÓN DE LA API PARA TERRAFORM
+    # ==========================================
+    - name: Asegurar que la API de Incus escuche en el puerto 8443
+      command: incus config set core.https_address 0.0.0.0:8443
+      changed_when: false
+
+    - name: Mostrar instrucciones para vincular con Terraform
+      debug:
+        msg: |
+          =======================================================
+          El servidor Incus está listo para Terraform.
+          Para conectarlo, ejecuta en tu terminal local:
+          
+          incus remote add servidor-aws https://<IP_PÚBLICA_AWS>:8443
+          =======================================================
