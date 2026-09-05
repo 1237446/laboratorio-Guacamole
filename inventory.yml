@@ -1,0 +1,16 @@
+all:
+  children:
+    servidor_incus:
+      hosts:
+        servidor_incus:
+          ansible_host: 192.168.1.100
+          ansible_user: ubuntu
+          ansible_password: "Incus2023"
+          ansible_become_password: "Incus2023"
+    servidor_guacamole:
+      hosts:
+        servidor_guacamole:
+          ansible_host: 192.168.1.101
+          ansible_user: ubuntu
+          ansible_password: "Guacamole2023"
+          ansible_become_password: "Guacamole2023"
