@@ -1,5 +1,5 @@
 ---
-- name: Preparar Servidor AWS como Host de Incus (Dia 0)
+- name: Preparar Servidor como Host de Incus (Dia 0)
   hosts: servidor_incus
   become: yes
   gather_facts: yes
