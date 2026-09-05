@@ -1,0 +1,143 @@
+---
+- name: Preparar Servidor AWS para Guacamole y NPM (Dia 0)
+  hosts: servidor_guacamole
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # Ruta donde vivirán los archivos en el servidor remoto
+    app_dir: "/home/ubuntu/services"
+    # Ruta local donde tienes guardado el "Paquete de Producción"
+    local_src_dir: "../guacamole"
+
+  tasks:
+    # ==========================================
+    # 1. CONFIGURACIÓN DE FECHA Y HORA
+    # ==========================================
+    - name: Configurar la zona horaria a America/Lima
+      timezone:
+        name: America/Lima
+
+    - name: Asegurar que el servicio de sincronización de tiempo (NTP) esté activo
+      service:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+
+    # ==========================================
+    # 2. ACTUALIZACIÓN DEL SISTEMA
+    # ==========================================
+    - name: Actualizar repositorios y paquetes del sistema (apt update & upgrade)
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+
+    # ==========================================
+    # 3. INSTALACIÓN DE DOCKER Y PLUGINS
+    # ==========================================
+    - name: Instalar dependencias previas de Docker
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+        state: present
+
+    - name: Añadir clave GPG oficial de Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Añadir repositorio de Docker
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Instalar Docker CE y Docker Compose Plugin
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Asegurar que el usuario ubuntu pertenezca al grupo docker
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Iniciar y habilitar el servicio de Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # ==========================================
+    # 4. CREACIÓN DE ESTRUCTURA Y COPIA DE ARCHIVOS
+    # ==========================================
+    - name: Crear estructura de directorios para Guacamole
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/guacamole/init"
+        - "{{ app_dir }}/data/guacamole/extensions"
+
+    - name: Subir el docker-compose.yml y el .env
+      copy:
+        src: "{{ local_src_dir }}/{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+      loop:
+        - docker-compose.yml
+        - .env
+
+    - name: Subir el script de inicialización de la Base de Datos
+      copy:
+        src: "{{ local_src_dir }}/guacamole/init/01-initdb.sql"
+        dest: "{{ app_dir }}/guacamole/init/01-initdb.sql"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Subir extensiones JAR (Tema Visual y Módulo Incus)
+      copy:
+        src: "{{ local_src_dir }}/data/guacamole/extensions/{{ item }}"
+        dest: "{{ app_dir }}/data/guacamole/extensions/{{ item }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      loop:
+        - guacamole-ansible-theme.jar
+        - guacamole-incus-manager-1.0.0.jar
+
+    - name: Subir la llave SSH para Ansible (PEM)
+      copy:
+        src: "{{ local_src_dir }}/data/guacamole/laboratorio-ansible.pem"
+        dest: "{{ app_dir }}/data/guacamole/laboratorio-ansible.pem"
+        owner: 1001
+        group: 1001
+        mode: '0400'
+
+    # ==========================================
+    # 5. DESPLIEGUE CON DOCKER COMPOSE
+    # ==========================================
+    - name: Levantar el stack de Guacamole y NPM
+      command: docker compose up -d
+      args:
+        chdir: "{{ app_dir }}"
+      become_user: ubuntu
+      changed_when: false
