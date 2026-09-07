@@ -6,9 +6,9 @@
 
   vars:
     # Ruta donde vivirán los archivos en el servidor remoto
-    app_dir: "/home/ubuntu/services"
+    app_dir: "/home/{{ ansible_user | default('ubuntu') }}/services"
     # Ruta local donde tienes guardado el "Paquete de Producción"
-    local_src_dir: "../guacamole"
+    local_src_dir: "{{ playbook_dir }}/guacamole"
 
   tasks:
     # ==========================================
@@ -20,7 +20,7 @@
 
     - name: Asegurar que el servicio de sincronización de tiempo (NTP) esté activo
       service:
-        name: systemd-timesyncd
+        name: chrony
         state: started
         enabled: yes
 
@@ -46,14 +46,21 @@
           - gnupg
         state: present
 
-    - name: Añadir clave GPG oficial de Docker
-      apt_key:
+    - name: Asegurar que el directorio /etc/apt/keyrings exista
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Descargar la clave GPG oficial de Docker
+      get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
 
     - name: Añadir repositorio de Docker
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
         state: present
         filename: docker
 
@@ -67,11 +74,14 @@
         state: present
         update_cache: yes
 
-    - name: Asegurar que el usuario ubuntu pertenezca al grupo docker
+    - name: Asegurar que el usuario pertenezca al grupo docker
       user:
-        name: ubuntu
+        name: "{{ ansible_user | default('ubuntu') }}"
         groups: docker
         append: yes
+
+    - name: Reiniciar conexión SSH para aplicar nuevo grupo docker
+      meta: reset_connection
 
     - name: Iniciar y habilitar el servicio de Docker
       service:
@@ -86,39 +96,40 @@
       file:
         path: "{{ item }}"
         state: directory
-        owner: ubuntu
-        group: ubuntu
+        owner: "{{ ansible_user | default('ubuntu') }}"
+        group: "{{ ansible_user | default('ubuntu') }}"
         mode: '0755'
       loop:
         - "{{ app_dir }}"
-        - "{{ app_dir }}/guacamole/init"
+        - "{{ app_dir }}/guacamole"
         - "{{ app_dir }}/data/guacamole/extensions"
+        - "{{ app_dir }}/data/guacamole/recordings"
 
-    - name: Subir el docker-compose.yml y el .env
+    - name: Subir el docker-compose.yaml y el .env
       copy:
         src: "{{ local_src_dir }}/{{ item }}"
         dest: "{{ app_dir }}/{{ item }}"
-        owner: ubuntu
-        group: ubuntu
+        owner: "{{ ansible_user | default('ubuntu') }}"
+        group: "{{ ansible_user | default('ubuntu') }}"
         mode: '0600'
       loop:
-        - docker-compose.yml
+        - docker-compose.yaml
         - .env
 
     - name: Subir el script de inicialización de la Base de Datos
       copy:
-        src: "{{ local_src_dir }}/guacamole/init/01-initdb.sql"
-        dest: "{{ app_dir }}/guacamole/init/01-initdb.sql"
-        owner: ubuntu
-        group: ubuntu
+        src: "{{ local_src_dir }}/01-initdb.sql"
+        dest: "{{ app_dir }}/guacamole/01-initdb.sql"
+        owner: "{{ ansible_user | default('ubuntu') }}"
+        group: "{{ ansible_user | default('ubuntu') }}"
         mode: '0644'
 
     - name: Subir extensiones JAR (Tema Visual y Módulo Incus)
       copy:
         src: "{{ local_src_dir }}/data/guacamole/extensions/{{ item }}"
         dest: "{{ app_dir }}/data/guacamole/extensions/{{ item }}"
-        owner: ubuntu
-        group: ubuntu
+        owner: "{{ ansible_user | default('ubuntu') }}"
+        group: "{{ ansible_user | default('ubuntu') }}"
         mode: '0644'
       loop:
         - guacamole-ansible-theme.jar
@@ -139,5 +150,5 @@
       command: docker compose up -d
       args:
         chdir: "{{ app_dir }}"
-      become_user: ubuntu
+      become_user: "{{ ansible_user | default('ubuntu') }}"
       changed_when: false
