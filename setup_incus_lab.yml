@@ -14,7 +14,7 @@
 
     - name: Asegurar que el servicio de sincronización de tiempo (NTP) esté activo
       service:
-        name: systemd-timesyncd
+        name: chrony
         state: started
         enabled: yes
 
@@ -54,7 +54,7 @@
 
     - name: Agregar el repositorio APT de Zabbly
       apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/zabbly.asc] https://pkgs.zabbly.com/incus/stable {{ ansible_distribution_release }} main"
+        repo: "deb [signed-by=/etc/apt/keyrings/zabbly.asc] https://pkgs.zabbly.com/incus/stable {{ ansible_facts['distribution_release'] }} main"
         state: present
         filename: zabbly-incus-stable
 
@@ -64,11 +64,16 @@
         state: present
         update_cache: yes
 
-    - name: Asegurar que el usuario actual pertenezca al grupo incus-admin
+    - name: Asegurar que el usuario pertenezca a los grupos de Incus para ejecutar sin sudo
       user:
-        name: ubuntu
-        groups: incus-admin
+        name: "{{ ansible_user | default(ansible_facts['env']['SUDO_USER'] | default('user')) }}"
+        groups:
+          - incus-admin
+          - incus
         append: yes
+
+    - name: Reiniciar conexión SSH de Ansible para actualizar los grupos del usuario
+      meta: reset_connection
 
     # ==========================================
     # 5. INICIALIZACIÓN DE INCUS (PRESEED)
@@ -120,12 +125,21 @@
       command: incus config set core.https_address 0.0.0.0:8443
       changed_when: false
 
+    - name: Verificar que el usuario no-root puede ejecutar Incus sin sudo
+      command: incus list
+      become: no
+      changed_when: false
+
     - name: Mostrar instrucciones para vincular con Terraform
       debug:
         msg: |
-          =======================================================
-          El servidor Incus está listo para Terraform.
-          Para conectarlo, ejecuta en tu terminal local:
+          ================================================================
+          El servidor Incus está listo para operar sin sudo.
+          Usuario verificado: {{ ansible_user }} (miembro de incus-admin).
           
-          incus remote add servidor-aws https://<IP_PÚBLICA_AWS>:8443
-          =======================================================
+          Para conectar este servidor remotamente a tu cliente local:
+          1. En este servidor genera el token:
+             incus config trust add mi-cliente
+          2. En tu terminal local ejecuta:
+             incus remote add servidor-incus https://<IP_PÚBLICA_AWS>:8443
+          ================================================================
