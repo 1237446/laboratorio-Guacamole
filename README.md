@@ -163,6 +163,10 @@ terraform apply
 > [!WARNING]
 > **Atención al caché del navegador:** Si eliminas y recreas a un alumno usando Terraform, su ID interno cambiará. Si el alumno usa la pestaña "Conexiones Recientes" (Recent Connections) de Guacamole, dará error. Indícales que usen siempre la lista **"Todas las Conexiones" (All Connections)** que está más abajo.
 
+> [!WARNING]
+> Habilité PasswordAuthentication yes en /etc/ssh/sshd_config.d/60-cloudimg-settings.conf y agregué la clave pública correspondiente a ~/.ssh/authorized_keys del usuario user. Ahora Guacamole puede autenticarse tanto por clave como por contraseña.
+
+
 ---
 
 ## 🧠 Flujo de Auto-Apagado Inteligente
