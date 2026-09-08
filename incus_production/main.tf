@@ -21,8 +21,8 @@ provider "incus" {
 
   remote {
     name    = "servidor-incus"
-    address = "192.168.1.100:8443"
-    token   = "eyJjbGllbnRfbmFtZSI6InRlcnJhZm9ybS1sYWIiLCJmaW5nZXJwcmludCI6ImUxMzM2ZDc0NWUxZDI0ZjE4OGVjMGFkYzg1NWQ1YzMwY2IzN2JjNjA5ZGJiYTZlZGI2YjllYWFiZGUzYzQ3OTEiLCJhZGRyZXNzZXMiOlsiMTcyLjMxLjY3LjczOjg0NDMiLCIxMC4yNDUuMTcwLjE6ODQ0MyIsIltmZDQyOjI4YTQ6OWUxMTpjMDljOjoxXTo4NDQzIl0sInNlY3JldCI6IjE0ODFlYWUxOWFmNzQ5ZWJmZDI3ZDdjYWQ0NDhkZTNhYTE3MjNmNjQ2MjcwOTNkMmMzZWU4ZTFhZjM3ZDAzM2QiLCJleHBpcmVzX2F0IjoiMDAwMS0wMS0wMVQwMDowMDowMFoifQ=="
+    address = "https://${var.incus_host}:8443"
+    token   = "eyJjbGllbnRfbmFtZSI6InRlcnJhZm9ybSIsImZpbmdlcnByaW50IjoiMDg3Zjc0OWQ0ZTBlMWY3MGY2YjIxODEzMjBiODFiZDcyNjcwNDhjNzNjMTFkY2VkM2FkYjdjYjNkMmNiYmYwNiIsImFkZHJlc3NlcyI6WyIxNzIuMTYuOS44NTo4NDQzIiwiMTAuMTYuMjkuMTo4NDQzIl0sInNlY3JldCI6IjgyYzQ3OTE3ODc3OGNlY2VkOTZmMjQ3ZDliYjYxN2RmOGMyN2U3ODU2OGVlMzJmZjlmZjZkNTc1ODFiMzZiYTYiLCJleHBpcmVzX2F0IjoiMDAwMS0wMS0wMVQwMDowMDowMFoifQ=="
   }
 }
 
@@ -34,12 +34,39 @@ provider "guacamole" {
 }
 
 # ==============================================================================
+# Variables de Infraestructura y Conectividad
+# ==============================================================================
+variable "incus_host" {
+  type        = string
+  description = "Dirección IP o FQDN del servidor host de Incus"
+  default     = "172.16.9.85"
+}
+
+variable "guacamole_host" {
+  type        = string
+  description = "Dirección IP del servidor donde corre Apache Guacamole / PostgreSQL"
+  default     = "172.16.9.241"
+}
+
+variable "guacamole_ssh_user" {
+  type        = string
+  description = "Usuario SSH para conectarse al servidor Guacamole y aplicar el tema vía SQL"
+  default     = "user"
+}
+
+variable "guacamole_ssh_key" {
+  type        = string
+  description = "Ruta a la llave privada SSH para conectar a Guacamole (dejar vacía si no se requiere -i)"
+  default     = ""
+}
+
+# ==============================================================================
 # Variables de Guacamole
 # ==============================================================================
 variable "guacamole_url" {
   type        = string
   description = "URL pública o privada de Apache Guacamole (vía Nginx Proxy Manager)"
-  default     = "https://laboratorio-guacamole.com"
+  default     = "https://laboratorio-ansible.duckdns.org"
 }
 
 variable "guacamole_username" {
@@ -60,20 +87,20 @@ variable "guacamole_password" {
 # ==============================================================================
 locals {
   alumnos = {
-    "juan" = {
+    "alumno-1" = {
       ssh_port      = 2001
       subnet        = "10.20.10.1/24"
-      guac_password = "PasswordJuan2026!"
+      guac_password = "Passwordalumno-12026!"
     }
-    "maria" = {
+    "alumno-2" = {
       ssh_port      = 2002
       subnet        = "10.20.11.1/24"
-      guac_password = "PasswordMaria2026!"
+      guac_password = "Passwordalumno-22026!"
     }
-    "pedro" = {
+    "alumno-3" = {
       ssh_port      = 2003
       subnet        = "10.20.12.1/24"
-      guac_password = "PasswordPedro2026!"
+      guac_password = "Passwordalumno-32026!"
     }
   }
 }
@@ -85,8 +112,9 @@ resource "incus_profile" "base_alumno" {
   name   = "base-alumno"
   remote = "servidor-incus"
   config = {
-    "limits.memory" = "512MB"
-    "limits.cpu"    = "1"
+    "limits.memory"  = "512MB"
+    "limits.cpu"     = "1"
+    "boot.autostart" = "false"
   }
 }
 
@@ -226,8 +254,8 @@ resource "guacamole_connection_ssh" "alumno_ssh" {
   parent_identifier = "ROOT"
 
   parameters {
-    # IP privada del host Incus (comunicación interna)
-    hostname = "172.31.67.73"
+    # IP del host Incus (comunicación interna)
+    hostname = var.incus_host
     port     = each.value.ssh_port
     username = "ansible"
     password = "ansible"
@@ -270,7 +298,7 @@ resource "null_resource" "apply_terminal_theme" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      ssh -i ./laboratorio-ansible.pem -o StrictHostKeyChecking=no ubuntu@ec2-3-12-169-63.us-east-2.compute.amazonaws.com "
+      ssh ${var.guacamole_ssh_key != "" ? format("-i %s", var.guacamole_ssh_key) : ""} -o StrictHostKeyChecking=no ${var.guacamole_ssh_user}@${var.guacamole_host} "
         sudo docker exec guacamole-db psql -U guacamole_user -d guacamole_db -c \"
           INSERT INTO guacamole_connection_parameter (connection_id, parameter_name, parameter_value)
           SELECT connection_id, 'color-scheme', 'background: rgb:2E/34/40; foreground: rgb:D8/DE/E9; color0: rgb:3B/42/52; color1: rgb:BF/61/6A; color2: rgb:A3/BE/8C; color3: rgb:EB/CB/8B; color4: rgb:81/A1/C1; color5: rgb:B4/8E/AD; color6: rgb:88/C0/D0; color7: rgb:E5/E9/F0; color8: rgb:4C/56/6A; color9: rgb:BF/61/6A; color10: rgb:A3/BE/8C; color11: rgb:EB/CB/8B; color12: rgb:81/A1/C1; color13: rgb:B4/8E/AD; color14: rgb:8F/BC/BB; color15: rgb:EC/EF/F4;'
