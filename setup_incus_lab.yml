@@ -143,3 +143,36 @@
           2. En tu terminal local ejecuta:
              incus remote add servidor-incus https://<IP_PÚBLICA_AWS>:8443
           ================================================================
+
+    # ==========================================
+    # 7. CONFIGURACIÓN SSH PARA EL MÓDULO GUACAMOLE
+    # ==========================================
+    - name: Habilitar autenticación por contraseña en sshd_config
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        state: present
+
+    - name: Asegurar que los archivos en sshd_config.d permitan PasswordAuthentication
+      shell: |
+        sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
+      changed_when: false
+
+    - name: Autorizar clave SSH de Guacamole si existe localmente
+      authorized_key:
+        user: "{{ ansible_user | default(ansible_facts['env']['SUDO_USER'] | default('user')) }}"
+        key: "{{ lookup('pipe', 'ssh-keygen -y -f ' + item) }}"
+        state: present
+      loop:
+        - "{{ playbook_dir }}/laboratorio-ansible.pem"
+        - "{{ playbook_dir }}/guacamole/data/guacamole/laboratorio-ansible.pem"
+      ignore_errors: yes
+
+    - name: Reiniciar servicio SSH para aplicar los cambios de autenticación
+      service:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - ssh
+      ignore_errors: yes
